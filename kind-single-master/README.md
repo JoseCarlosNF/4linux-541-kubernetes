@@ -254,3 +254,31 @@ Após criar os recursos e realizar o apontamento de DNS correspondente, podemos 
 
 - <http://exemplo-ingress.4linux.kubernetes.lab.local/foo>
 - <http://exemplo-ingress.4linux.kubernetes.lab.local/bar>
+
+## :pushpin: Armazenamento Persistente
+
+Para simular o armazenamento persistente, utilizaremos o NFS.
+
+### Criação do servidor NFS
+
+O servidor de NFS também será um container, a seguir temos os comandos para
+criação e ingresso do container servidor de NFS na mesma rede que os node do
+nosso cluster.
+
+> [!WARNING]
+> Existe a possibilidade de o nome da rede dos containers nodes do cluster ser
+> diferente. A inferência pode ser feita listando as redes do docker.
+
+```bash
+docker run --rm -d \
+  --name nfs-server \
+  --privileged \
+  -v /srv/nfs:/nfs-data \
+  -e SHARED_DIRECTORY=/nfs-data \
+  -e SYNC=true \
+  --net kind \
+  itsthenetwork/nfs-server-alpine
+docker network connect kind nfs-server
+```
+
+### Configuração do NFS no cluster
