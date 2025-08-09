@@ -66,8 +66,11 @@ até os IPs dos *load balancers*.
 #### :pushpin: instalação do MetalLB
 
 ```bash
-k create ns metallb-system
-helm install metallb metallb/metallb --version 0.13.11 -n metallb-system
+helm install metallb metallb \
+  --repo https://metallb.github.io/metallb \
+  --version 0.13.11 \
+  -n metallb-system \
+  --create-namespace
 ```
 
 #### :pushpin: apontamento do `IPAddressPool`
@@ -98,3 +101,156 @@ metadata:
 EOF
 '
 ```
+
+## :pushpin: Ingress Controller
+
+Atual como um proxy reverso, identificando os ingresses criados dentro do
+cluster e construindo, de forma autónoma as regras de rotamento.
+
+As requisições são encaminhadas para os services, e posteriormente para os
+pods.
+
+### :pushpin: [nginx-ingress](https://kubernetes.github.io/ingress-nginx/deploy/)
+
+Está entres os *ingresses controllers* mais utilizados, dentre as alternativas
+as mais famosas são HAProxy, Traefik e Istio.
+
+#### :pushpin: instalação do nginx-ingress-controller
+
+```bash
+helm install nginx-ingress nginx-ingress \
+  --repo https://helm.nginx.com/stable \
+  -n nginx-ingress \
+  --create-namespace
+```
+
+## :pushpin: Teste no *Load Balancer* + *Ingress*
+
+Se tudo correr bem, nesse ponto teremos um cluster com um *load balancer*
+completamente funcional.
+
+Para identificar isso, basta executar o comando a seguir:
+
+```bash
+k get svc -n nginx-ingress
+```
+
+A saída deve ser algo do tipo. O ***External-IP*** nos indicará o IP do nosso
+*load balancer*.
+
+```plaintext
+NAME                       TYPE           CLUSTER-IP     EXTERNAL-IP    PORT(S)                      AGE
+nginx-ingress-controller   LoadBalancer   10.96.23.131   172.18.1.201   80:30394/TCP,443:30830/TCP   4m2s
+```
+
+### :pushpin: Exemplo de ingress
+
+O declarativo a seguir cria 2 serviços que serão expostos pelo mesmo ingress.
+
+```bash
+bash -c '
+kubectl apply -n default -f - <<EOF
+---
+kind: Pod
+apiVersion: v1
+metadata:
+  name: foo-app
+  labels:
+    app: foo
+spec:
+  containers:
+    - command:
+        - /agnhost
+        - serve-hostname
+        - --http=true
+        - --port=8080
+      image: registry.k8s.io/e2e-test-images/agnhost:2.39
+      name: foo-app
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: foo-service
+spec:
+  selector:
+    app: foo
+  ports:
+    # Default port used by the image
+    - port: 8080
+---
+kind: Pod
+apiVersion: v1
+metadata:
+  name: bar-app
+  labels:
+    app: bar
+spec:
+  containers:
+    - command:
+        - /agnhost
+        - serve-hostname
+        - --http=true
+        - --port=8080
+      image: registry.k8s.io/e2e-test-images/agnhost:2.39
+      name: bar-app
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: bar-service
+spec:
+  selector:
+    app: bar
+  ports:
+    # Default port used by the image
+    - port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: example-ingress
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: exemplo-ingress.4linux.kubernetes.lab.local
+      http:
+        paths:
+          - pathType: Prefix
+            path: /foo
+            backend:
+              service:
+                name: foo-service
+                port:
+                  number: 8080
+          - pathType: Prefix
+            path: /bar
+            backend:
+              service:
+                name: bar-service
+                port:
+                  number: 8080
+EOF
+'
+```
+
+### :pushpin: Configurações de DNS
+
+Para conseguir chagar até as aplicações, podemos realizar uma adição no
+`/etc/hosts` ou configurar um serviço de DNS, para fins didáticos seguiremos
+com o mais simples, o `hosts`.
+
+> [!WARNING]
+> Verifique o External-IP antes de executar o comando a seguir. Afinal se
+> quisermos chegar ao *load balancer*, devemos apontar seu IP corretamente.
+
+```bash
+echo -e 'exemplo-ingress.4linux.kubernetes.lab.local  172.18.1.201' \
+| sudo tee -a /etc/hosts
+```
+
+### :pushpin: Acesso aos serviços
+
+Após criar os recursos e realizar o apontamento de DNS correspondente, podemos chegar aos serviços pelas seguintes URLs:
+
+- <http://exemplo-ingress.4linux.kubernetes.lab.local/foo>
+- <http://exemplo-ingress.4linux.kubernetes.lab.local/bar>
