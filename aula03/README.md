@@ -57,8 +57,8 @@ k create ns metallb-system
 helm install metallb metallb/metallb --version 0.13.11 -n metallb-system
 
 # ---------- Load Balancer: aplicação de encaminhamento de tráfego -------------
-k craete ns nginx-ingress
-helm install nginx-ingress nginx/nginx-ingress --version 0.18.1 -n nginx-ingress
+k create ns nginx-ingress
+helm install nginx-ingress nginx/nginx-ingress -n nginx-ingress
 
 # ------------------ Coleta de uso de recursos p/ scaling ----------------------
 k create ns metrics-server
