@@ -18,6 +18,22 @@ local, de forma rápida.
 > e aprender sobre os componentes necessários para subir um cluster e acessar
 > seus serviços.
 
+## :pushpin: Cluster
+
+Para criar o cluster, utilizaremos o `kind` e o arquivo
+[`kind-single-master.yaml`](kind-single-master/kind-single-master.yaml).
+
+O [Kind](https://kind.sigs.k8s.io/) faz o provisionamento de clusters
+utilizando o docker como motor para rodar os nodes.
+
+Ao utilizar containers para os nodes, a construção de trabalhos bem modelados
+passar a ser mais tranquila, uma vez que não precisamos nos preocupar em
+estragar o cluster, haja vista que o processo de recriação é facilitado.
+
+```bash
+kind create cluster --config kind-single-master/kind-config.yaml
+```
+
 ## :pushpin: Load Balancer
 
 Componente **essencial para *appliances* que estão rodando fora das clouds**,
