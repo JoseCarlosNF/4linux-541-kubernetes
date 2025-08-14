@@ -69,8 +69,8 @@ até os IPs dos *load balancers*.
 helm install metallb metallb \
   --repo https://metallb.github.io/metallb \
   --version 0.13.11 \
-  -n metallb-system \
-  --create-namespace
+  --create-namespace \
+  -n metallb-system
 ```
 
 #### :pushpin: apontamento do `IPAddressPool`
@@ -120,8 +120,8 @@ as mais famosas são HAProxy, Traefik e Istio.
 ```bash
 helm install nginx-ingress nginx-ingress \
   --repo https://helm.nginx.com/stable \
-  -n nginx-ingress \
-  --create-namespace
+  --create-namespace \
+  -n nginx-ingress
 ```
 
 ## :pushpin: Teste no *Load Balancer* + *Ingress*
@@ -250,7 +250,8 @@ echo -e 'exemplo-ingress.4linux.kubernetes.lab.local  172.18.1.201' \
 
 ### :pushpin: Acesso aos serviços
 
-Após criar os recursos e realizar o apontamento de DNS correspondente, podemos chegar aos serviços pelas seguintes URLs:
+Após criar os recursos e realizar o apontamento de DNS correspondente, podemos
+chegar aos serviços pelas seguintes URLs:
 
 - <http://exemplo-ingress.4linux.kubernetes.lab.local/foo>
 - <http://exemplo-ingress.4linux.kubernetes.lab.local/bar>
@@ -259,26 +260,87 @@ Após criar os recursos e realizar o apontamento de DNS correspondente, podemos 
 
 Para simular o armazenamento persistente, utilizaremos o NFS.
 
-### Criação do servidor NFS
+### Configuração do NFS no cluster
 
-O servidor de NFS também será um container, a seguir temos os comandos para
-criação e ingresso do container servidor de NFS na mesma rede que os node do
-nosso cluster.
+Não é obrigatório, mas o serviço de NFS também pode ser um  container, a seguir
+temos os comandos para criação do container do NFS, na mesma rede que os node
+do nosso cluster.
 
-> [!WARNING]
-> Existe a possibilidade de o nome da rede dos containers nodes do cluster ser
-> diferente. A inferência pode ser feita listando as redes do docker.
+#### configuração do serviço do NFS via container
+
+Nesse caso, estou utilizando o projeto
+<https://github.com/ehough/docker-nfs-server>, que exige a instalação e
+habilitação do módulo do NFS no kernel do host.
+
+A habilitação dos módulos pode ser feitas pelos seguintes comandos:
 
 ```bash
-docker run --rm -d \
-  --name nfs-server \
-  --privileged \
-  -v /srv/nfs:/nfs-data \
-  -e SHARED_DIRECTORY=/nfs-data \
-  -e SYNC=true \
-  --net kind \
-  itsthenetwork/nfs-server-alpine
-docker network connect kind nfs-server
+modprobe nfs nfsd
 ```
 
-### Configuração do NFS no cluster
+Com os módulos habilitados, podemos criar o container que irá executar o
+serviço do NFS, através do comando a seguir:
+
+> [!IMPORTANT]
+> É essencial usar a mesma rede que os containers do cluster, para que  o NFS
+> seja acessível a partir dos nodes do cluster.
+
+```bash
+docker run --rm -d --name nfs-server \
+  --privileged \
+  -v 4linux-k8s-backups:/backups \
+  -v 4linux-k8s-nfs:/nfs \
+  -e NFS_EXPORT_0='/backups' \
+  -e NFS_EXPORT_1='/nfs' \
+  --net kind \
+  erichough/nfs-server
+```
+
+#### configuração do armazenamento persistente
+
+```bash
+helm install nfs-subdir-external-provisioner \
+  nfs-subdir-external-provisioner/nfs-subdir-external-provisioner \
+  --set nfs.server=nfs-server \
+  --set nfs.path=/backups \
+  --create-namespace \
+  -n nfs-subdir-external-provisioner
+```
+
+#### configuração do [longhorn](https://longhorn.io/)
+
+```bash
+helm install longhorn longhorn \
+  --repo https://charts.longhorn.io \
+  --version 1.5.5 \
+  --set defaultSettings.backupTarget=nfs://nfs-server:/backups \
+  --create-namespace \
+  -n longhorn-system
+```
+
+```bash
+bash -c '
+kubectl apply -n longhorn-system -f - <<EOF
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+  name: longhorn-frontend
+  namespace: longhorn-system
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: longhorn.4linux.kubernetes.lab.local
+      http:
+        paths:
+          - backend:
+              service:
+                name: longhorn-frontend
+                port:
+                  number: 80
+            path: /
+            pathType: Prefix
+EOF
+'
+```
